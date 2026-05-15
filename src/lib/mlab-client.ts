@@ -1,4 +1,4 @@
-import type { Limits, ScanResult, Verdict } from './types';
+import type { CryptoChain, Limits, ScanResult, Verdict } from './types';
 
 const API_BASE = 'https://mlab.sh/api/v1';
 const REPORT_BASE = 'https://mlab.sh';
@@ -61,12 +61,12 @@ export async function validateKey(key: string): Promise<boolean> {
   }
 }
 
-export async function scanIp(ip: string): Promise<ScanResult> {
-  const res = await request(`/scan/ip?ip=${encodeURIComponent(ip)}`);
+export async function scanIp(ip: string, signal?: AbortSignal): Promise<ScanResult> {
+  const res = await request(`/scan/ip?ip=${encodeURIComponent(ip)}`, { signal });
   const data = await res.json();
   return {
     ioc: { type: ip.includes(':') ? 'ipv6' : 'ipv4', value: ip },
-    verdict: inferVerdict(data),
+    verdict: inferIpVerdict(data),
     data,
     fetchedAt: Date.now(),
     reportUrl: `${REPORT_BASE}/ip/${encodeURIComponent(ip)}`,
@@ -93,8 +93,9 @@ export async function scanDomain(domain: string, signal?: AbortSignal): Promise<
     await sleep(2000, signal);
     const sres = await request(`/scan/domain/status?domain=${encodeURIComponent(domain)}`, { signal });
     const s = await sres.json();
-    if (s?.status === 'success' || s?.status === 'done' || s?.status === 'completed') break;
-    if (s?.status === 'error' || s?.status === 'failed') throw new MlabError('http', 'Scan failed');
+    const st = (s?.status ?? '').toString().toLowerCase();
+    if (['success', 'done', 'completed'].includes(st)) break;
+    if (['error', 'failed'].includes(st)) throw new MlabError('http', 'Scan failed');
   }
 
   // 3. results
@@ -119,7 +120,7 @@ async function tryFetchExistingDomain(domain: string, signal?: AbortSignal): Pro
     if (e instanceof MlabError && (e.code === 'unauthorized' || e.code === 'rate-limited')) throw e;
     return null;
   }
-  if (status !== 'success' && status !== 'done' && status !== 'completed') return null;
+  if (!['success', 'done', 'completed'].includes(status)) return null;
 
   try {
     const rres = await request(`/scan/domain/results?domain=${encodeURIComponent(domain)}`, { signal });
@@ -135,10 +136,24 @@ async function tryFetchExistingDomain(domain: string, signal?: AbortSignal): Pro
 function buildDomainResult(domain: string, data: unknown): ScanResult {
   return {
     ioc: { type: 'domain', value: domain },
-    verdict: inferVerdict(data),
+    verdict: inferDomainVerdict(data),
     data,
     fetchedAt: Date.now(),
     reportUrl: `${REPORT_BASE}/domain/${encodeURIComponent(domain)}`,
+  };
+}
+
+export async function scanCrypto(address: string, chain?: CryptoChain, signal?: AbortSignal): Promise<ScanResult> {
+  const qs = new URLSearchParams({ address });
+  if (chain) qs.set('chain', chain);
+  const res = await request(`/scan/crypto?${qs.toString()}`, { signal });
+  const data = await res.json();
+  return {
+    ioc: { type: 'crypto', value: address, chain },
+    verdict: inferCryptoVerdict(data),
+    data,
+    fetchedAt: Date.now(),
+    reportUrl: `${REPORT_BASE}/crypto/${encodeURIComponent(address)}`,
   };
 }
 
@@ -147,6 +162,7 @@ export async function getLimits(): Promise<Limits> {
   await Promise.all([
     request('/limit/domain').then((r) => r.json()).then((d) => { out.domain = parseLimit(d); }).catch(() => {}),
     request('/limit/ip').then((r) => r.json()).then((d) => { out.ip = parseLimit(d); }).catch(() => {}),
+    request('/limit/crypto').then((r) => r.json()).then((d) => { out.crypto = parseLimit(d); }).catch(() => {}),
   ]);
   return out;
 }
@@ -158,33 +174,68 @@ function parseLimit(data: any): { remaining: number; limit: number } {
   return { remaining, limit };
 }
 
-function inferVerdict(data: any): Verdict {
+/**
+ * Domain payload shape (sample):
+ *   { domain, status: "completed", scan_date, results: { dns, ssl[], subdomains[], subdomains_suspicious[], files{} } }
+ */
+function inferDomainVerdict(data: any): Verdict {
+  if (!data || typeof data !== 'object') return 'unknown';
+  const results = data.results;
+  if (!results || typeof results !== 'object') {
+    // Top-level status fallback
+    const st = (data.status ?? '').toString().toLowerCase();
+    return st === 'completed' || st === 'success' || st === 'done' ? 'clean' : 'unknown';
+  }
+  const suspicious = results.subdomains_suspicious;
+  if (Array.isArray(suspicious) && suspicious.length > 0) return 'suspicious';
+  // No negative signals + we got a real report → clean
+  return 'clean';
+}
+
+// Exported for unit tests; not part of the public API.
+export { inferCryptoVerdict as __inferCryptoVerdictForTest };
+
+/**
+ * Crypto payload (real shape):
+ *   { address, chain, type, categories[], labels[], risk_level, risk_score,
+ *     sanctions: { is_sanctioned: bool, authority?, date? }, checked_at }
+ */
+function inferCryptoVerdict(data: any): Verdict {
   if (!data || typeof data !== 'object') return 'unknown';
 
-  // Explicit verdict/threat fields take precedence
-  const v = (data.verdict || data.threat || '').toString().toLowerCase();
-  if (v.includes('malicious') || v.includes('bad')) return 'malicious';
-  if (v.includes('suspicious') || v.includes('warn')) return 'suspicious';
-  if (v.includes('clean') || v.includes('good') || v.includes('safe')) return 'clean';
+  // Actually sanctioned → malicious. (Presence of the sanctions object alone is NOT a signal.)
+  const sanctioned = data?.sanctions?.is_sanctioned === true || data?.sanctions?.sanctioned === true;
+  if (sanctioned) return 'malicious';
 
-  // Heuristics on common report shapes
-  const suspiciousSubs = data.subdomains_suspicious;
-  if (Array.isArray(suspiciousSubs) && suspiciousSubs.length > 0) return 'suspicious';
-  if (typeof suspiciousSubs === 'number' && suspiciousSubs > 0) return 'suspicious';
+  const cats: string[] = Array.isArray(data.categories)
+    ? data.categories.map((c: any) => String(c).toLowerCase())
+    : [];
+  if (cats.some((c) => /scam|mixer|illicit|hack|stolen|ransom|sanctioned/.test(c))) return 'malicious';
 
-  const reputation = (data.reputation || data.risk_level || data.category || '').toString().toLowerCase();
-  if (reputation.includes('malicious') || reputation.includes('high')) return 'malicious';
-  if (reputation.includes('suspicious') || reputation.includes('medium')) return 'suspicious';
-  if (reputation.includes('clean') || reputation.includes('low') || reputation.includes('safe')) return 'clean';
+  const level = (data.risk_level ?? '').toString().toLowerCase();
+  const score = Number(data.risk_score);
+  if (level === 'high' || (Number.isFinite(score) && score >= 75)) return 'malicious';
+  if (level === 'medium' || (Number.isFinite(score) && score >= 40)) return 'suspicious';
+  if (level === 'low' || (Number.isFinite(score) && score >= 0)) return 'clean';
 
-  // Got a real report payload without negative signals → treat as clean.
-  // We distinguish this from an empty/error payload by checking for at least one known report key.
-  const KNOWN = ['subdomains', 'dns', 'ssl', 'whois', 'certificates', 'ips', 'asn', 'geolocation', 'hosting', 'files', 'isp', 'organization', 'country'];
-  if (KNOWN.some((k) => k in data)) return 'clean';
+  // Got a real payload (has address/type/categories) without negative signals → clean.
+  if (data.address && (data.type || data.address_type || Array.isArray(data.categories))) return 'clean';
 
-  // status:"success" alone (without any data field) — still treat as clean
-  if ((data.status || '').toString().toLowerCase() === 'success') return 'clean';
+  return 'unknown';
+}
 
+/**
+ * IP payload shape (sample):
+ *   { ip, isp, as, country, region, city, lat, lon, reserved: bool, status: "success", ... }
+ */
+function inferIpVerdict(data: any): Verdict {
+  if (!data || typeof data !== 'object') return 'unknown';
+  // Reserved IPs (RFC1918, loopback…) aren't a threat signal, but they shouldn't show as "clean" either.
+  if (data.reserved === true) return 'unknown';
+  const st = (data.status ?? '').toString().toLowerCase();
+  if (st === 'error' || st === 'failed') return 'unknown';
+  // Real IP data with ASN/ISP info and not reserved → no negative signal exposed by this endpoint → clean.
+  if (data.ip && (data.as || data.isp || data.country)) return 'clean';
   return 'unknown';
 }
 

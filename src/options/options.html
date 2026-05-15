@@ -58,6 +58,34 @@
           <small class="muted">Highlight detected IOCs directly inside every page. Off by default — the popup still shows what was found.</small>
         </span>
       </label>
+      <label class="toggle" style="margin-top:14px">
+        <input type="checkbox" id="notifyOnMalicious" />
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span class="toggle-label">
+          <strong>Notify on malicious / suspicious</strong>
+          <small class="muted">Show a desktop notification when a scan returns a flagged verdict.</small>
+        </span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Detection</h2>
+      <label class="toggle">
+        <input type="checkbox" id="cryptoDetectionEnabled" />
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span class="toggle-label">
+          <strong>Crypto wallet detection</strong>
+          <small class="muted">Detect BTC, ETH (and EVM chains), TRX and Solana addresses. Off by default — base58 strings are noisy and the crypto quota is lower than domain/IP.</small>
+        </span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Disabled sites</h2>
+      <p class="muted">Hosts where the extension stays passive (no scan, no badge, no highlight).</p>
+      <div id="disabledList" class="disabled-list">
+        <p class="muted empty">None.</p>
+      </div>
     </section>
 
     <section class="card">

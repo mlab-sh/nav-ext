@@ -1,8 +1,13 @@
-export type IocType = 'domain' | 'ipv4' | 'ipv6';
+export type IocType = 'domain' | 'ipv4' | 'ipv6' | 'crypto';
+
+/** Blockchain hint when type === 'crypto'. EVM addresses auto-detect as ETH; explicit chain helps for BSC/Polygon/etc. */
+export type CryptoChain = 'ETH' | 'BTC' | 'TRX' | 'SOL' | 'TON' | 'DOGE';
 
 export interface Ioc {
   type: IocType;
   value: string;
+  /** Only set when type === 'crypto'. */
+  chain?: CryptoChain;
 }
 
 export interface DetectedIoc extends Ioc {
@@ -10,6 +15,7 @@ export interface DetectedIoc extends Ioc {
   raw: string;
   /** true if private/reserved IP — display only, no lookup offered */
   reserved?: boolean;
+  /** crypto chain hint inherited from Ioc */
 }
 
 export type Verdict = 'clean' | 'suspicious' | 'malicious' | 'unknown';
@@ -26,6 +32,7 @@ export interface ScanResult {
 export interface Limits {
   domain?: { remaining: number; limit: number };
   ip?: { remaining: number; limit: number };
+  crypto?: { remaining: number; limit: number };
 }
 
 export type Msg =

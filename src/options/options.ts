@@ -17,6 +17,9 @@ const clearCacheBtn = $<HTMLButtonElement>('clearCache');
 const cacheMessageEl = $('cacheMessage');
 const versionEl = $('version');
 const highlightToggle = $<HTMLInputElement>('highlightEnabled');
+const notifyToggle = $<HTMLInputElement>('notifyOnMalicious');
+const cryptoToggle = $<HTMLInputElement>('cryptoDetectionEnabled');
+const disabledList = $('disabledList');
 
 versionEl.textContent = chrome.runtime.getManifest().version;
 
@@ -30,11 +33,12 @@ async function refreshStatus() {
 
 async function refreshQuota() {
   quotaEl.innerHTML = '<p class="muted">Loading…</p>';
-  const r = await sendMsg<{ kind: 'limits'; limits: { domain?: { remaining: number; limit: number }; ip?: { remaining: number; limit: number } } }>({ kind: 'get-limits' });
+  const r = await sendMsg<{ kind: 'limits'; limits: { domain?: { remaining: number; limit: number }; ip?: { remaining: number; limit: number }; crypto?: { remaining: number; limit: number } } }>({ kind: 'get-limits' });
   const l = r?.limits ?? {};
   const items: string[] = [];
   if (l.domain) items.push(pill('Domain', `${l.domain.remaining} / ${l.domain.limit}`));
   if (l.ip) items.push(pill('IP', `${l.ip.remaining} / ${l.ip.limit}`));
+  if (l.crypto) items.push(pill('Crypto', `${l.crypto.remaining} / ${l.crypto.limit}`));
   if (!items.length) {
     quotaEl.innerHTML = '<p class="muted">Quota info unavailable — try again after a scan.</p>';
     return;
@@ -107,10 +111,52 @@ highlightToggle.addEventListener('change', async () => {
   await updateSettings({ highlightEnabled: highlightToggle.checked });
 });
 
+notifyToggle.addEventListener('change', async () => {
+  await updateSettings({ notifyOnMalicious: notifyToggle.checked });
+});
+
+cryptoToggle.addEventListener('change', async () => {
+  await updateSettings({ cryptoDetectionEnabled: cryptoToggle.checked });
+});
+
 async function loadSettings() {
   const s = await getSettings();
   highlightToggle.checked = s.highlightEnabled;
+  notifyToggle.checked = s.notifyOnMalicious;
+  cryptoToggle.checked = s.cryptoDetectionEnabled;
+  renderDisabledList(s.disabledHosts);
 }
+
+function renderDisabledList(hosts: string[]) {
+  disabledList.innerHTML = '';
+  if (!hosts.length) {
+    disabledList.innerHTML = '<p class="muted empty">None.</p>';
+    return;
+  }
+  for (const host of hosts) {
+    const row = document.createElement('div');
+    row.className = 'disabled-row';
+    row.innerHTML = `<span>${escapeHtml(host)}</span>`;
+    const btn = document.createElement('button');
+    btn.className = 'ghost';
+    btn.textContent = 'Re-enable';
+    btn.addEventListener('click', async () => {
+      const s = await getSettings();
+      await updateSettings({ disabledHosts: s.disabledHosts.filter((h) => h !== host) });
+      loadSettings();
+    });
+    row.appendChild(btn);
+    disabledList.appendChild(row);
+  }
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.settings) loadSettings();
+});
 
 refreshStatus();
 refreshQuota();

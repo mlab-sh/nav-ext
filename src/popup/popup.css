@@ -137,6 +137,15 @@ button.link {
 .row { display: flex; gap: 6px; margin-bottom: 10px; }
 .row input { flex: 1; }
 
+.site-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: -4px 0 10px;
+  padding: 4px 0;
+}
+.site-toggle .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+
 .hint { margin: -4px 0 10px; font-size: 11px; color: var(--muted); }
 
 .section-title {
@@ -217,7 +226,11 @@ button.link {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: copy;
+  user-select: text;
 }
+.ioc-value:hover { color: var(--accent-hover); }
+.ioc-value.flash { color: var(--clean); font-style: italic; }
 .ioc-row button { padding: 3px 8px; font-size: 11px; }
 .ioc-row[data-reserved="1"] { opacity: 0.55; }
 .ioc-row[data-reserved="1"] button { display: none; }

@@ -1,5 +1,6 @@
-import { classifyIoc } from '../lib/regex';
+import { classifyCrypto, classifyIoc } from '../lib/regex';
 import { refang } from '../lib/refang';
+import { getSettings, isHostDisabled, toggleHostDisabled } from '../lib/settings';
 import type { DetectedIoc, Ioc, Msg, ScanResult } from '../lib/types';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -16,15 +17,44 @@ const iocCount = $('iocCount');
 const resultsEl = $('results');
 const limitsEl = $('limits');
 const historyList = $('historyList');
+const historyFilter = $<HTMLInputElement>('historyFilter');
 const clearHistoryBtn = $<HTMLButtonElement>('clearHistory');
+const siteHostEl = $('siteHost');
+const toggleSiteBtn = $<HTMLButtonElement>('toggleSite');
+
+let currentHost = '';
 
 const recentResults = new Map<string, ScanResult>();
 
 async function init() {
   setupTabs();
+  await refreshSiteToggle();
   await refreshAuthStatus();
   await refreshAll();
 }
+
+async function refreshSiteToggle() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  try {
+    currentHost = tab?.url ? new URL(tab.url).hostname : '';
+  } catch { currentHost = ''; }
+  if (!currentHost) {
+    siteHostEl.textContent = '';
+    toggleSiteBtn.classList.add('hidden');
+    return;
+  }
+  siteHostEl.textContent = currentHost;
+  const s = await getSettings();
+  const disabled = isHostDisabled(currentHost, s.disabledHosts);
+  toggleSiteBtn.textContent = disabled ? 'Enable on this site' : 'Disable on this site';
+  toggleSiteBtn.classList.remove('hidden');
+}
+
+toggleSiteBtn.addEventListener('click', async () => {
+  if (!currentHost) return;
+  await toggleHostDisabled(currentHost);
+  await refreshSiteToggle();
+});
 
 function setupTabs() {
   const tabs = document.querySelectorAll<HTMLButtonElement>('.tab');
@@ -46,12 +76,24 @@ clearHistoryBtn.addEventListener('click', async () => {
   await refreshHistory();
 });
 
+let historyCache: ScanResult[] = [];
+
+historyFilter.addEventListener('input', () => renderHistoryList());
+
 async function refreshHistory() {
   const r = await sendMsg<{ kind: 'history'; entries: ScanResult[] }>({ kind: 'get-history' });
-  const entries = r?.entries ?? [];
+  historyCache = r?.entries ?? [];
+  renderHistoryList();
+}
+
+function renderHistoryList() {
+  const q = historyFilter.value.trim().toLowerCase();
+  const entries = q
+    ? historyCache.filter((r) => r.ioc.value.toLowerCase().includes(q) || r.ioc.type.includes(q) || r.verdict.includes(q))
+    : historyCache;
   historyList.innerHTML = '';
   if (!entries.length) {
-    historyList.innerHTML = '<p class="muted empty">No scans yet.</p>';
+    historyList.innerHTML = `<p class="muted empty">${q ? 'No matches.' : 'No scans yet.'}</p>`;
     return;
   }
   for (const r of entries) {
@@ -128,7 +170,9 @@ manualInput.addEventListener('input', () => {
   if (!v) {
     manualHint.classList.add('hidden');
   } else if (t) {
-    manualHint.textContent = `Detected as ${t.toUpperCase()}${v !== manualInput.value.trim() ? ` (refanged: ${v})` : ''}`;
+    const chain = t === 'crypto' ? classifyCrypto(v) : null;
+    const label = chain ? `${t.toUpperCase()} (${chain})` : t.toUpperCase();
+    manualHint.textContent = `Detected as ${label}${v !== manualInput.value.trim() ? ` (refanged: ${v})` : ''}`;
     manualHint.classList.remove('hidden');
   } else {
     manualHint.textContent = 'Unrecognized format.';
@@ -136,11 +180,38 @@ manualInput.addEventListener('input', () => {
   }
 });
 
+function makeIoc(t: ReturnType<typeof classifyIoc>, v: string): Ioc | null {
+  if (!t) return null;
+  // Crypto addresses are checksum/base58 — preserve case. Others normalize to lowercase.
+  if (t === 'crypto') return { type: t, value: v, chain: classifyCrypto(v) ?? undefined };
+  return { type: t, value: v.toLowerCase() };
+}
+
 scanManualBtn.addEventListener('click', () => {
-  const v = refang(manualInput.value.trim());
-  const t = v ? classifyIoc(v) : null;
-  if (!v || !t) return;
-  triggerScan({ type: t, value: v.toLowerCase() });
+  const raw = manualInput.value;
+  if (!raw.trim()) return;
+  const tokens = raw.split(/[\s,;]+/).map((t) => refang(t.trim())).filter(Boolean);
+  if (tokens.length <= 1) {
+    const v = refang(raw.trim());
+    const ioc = makeIoc(v ? classifyIoc(v) : null, v);
+    if (!ioc) return;
+    triggerScan(ioc);
+    return;
+  }
+  const seen = new Set<string>();
+  let scanned = 0;
+  for (const v of tokens) {
+    const ioc = makeIoc(classifyIoc(v), v);
+    if (!ioc) continue;
+    const key = `${ioc.type}:${ioc.value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    triggerScan(ioc);
+    scanned++;
+  }
+  manualHint.textContent = `Queued ${scanned} scan${scanned === 1 ? '' : 's'}.`;
+  manualHint.classList.remove('hidden');
+  manualInput.value = '';
 });
 
 manualInput.addEventListener('keydown', (e) => {
@@ -179,24 +250,26 @@ async function refreshIocs() {
     const row = document.createElement('div');
     row.className = 'ioc-row';
     if (ioc.reserved) row.dataset.reserved = '1';
+    const typeLabel = ioc.type === 'crypto' && ioc.chain ? `${ioc.type} ${ioc.chain}` : ioc.type;
     row.innerHTML = `
-      <span class="ioc-type">${ioc.type}</span>
+      <span class="ioc-type">${escapeHtml(typeLabel)}</span>
       <span class="ioc-value" title="${escapeHtml(ioc.value)}">${escapeHtml(ioc.value)}</span>
       <button class="scan-btn">Scan</button>
     `;
     row.querySelector<HTMLButtonElement>('.scan-btn')?.addEventListener('click', () => {
-      triggerScan({ type: ioc.type, value: ioc.value });
+      triggerScan({ type: ioc.type, value: ioc.value, chain: ioc.chain });
     });
     iocList.appendChild(row);
   }
 }
 
 async function refreshLimits() {
-  const r = await sendMsg<{ kind: 'limits'; limits: { domain?: { remaining: number; limit: number }, ip?: { remaining: number; limit: number } } }>({ kind: 'get-limits' });
+  const r = await sendMsg<{ kind: 'limits'; limits: { domain?: { remaining: number; limit: number }, ip?: { remaining: number; limit: number }, crypto?: { remaining: number; limit: number } } }>({ kind: 'get-limits' });
   const l = r?.limits;
   const parts: string[] = [];
   if (l?.domain) parts.push(`<span class="pill">D ${l.domain.remaining}/${l.domain.limit}</span>`);
   if (l?.ip) parts.push(`<span class="pill">IP ${l.ip.remaining}/${l.ip.limit}</span>`);
+  if (l?.crypto) parts.push(`<span class="pill">C ${l.crypto.remaining}/${l.crypto.limit}</span>`);
   limitsEl.innerHTML = parts.join('');
 }
 
@@ -255,5 +328,37 @@ function sendMsg<T>(msg: Msg): Promise<T | undefined> {
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
+
+async function copyToClipboard(value: string, anchor?: HTMLElement) {
+  try {
+    await navigator.clipboard.writeText(value);
+    if (anchor) flashCopied(anchor);
+  } catch { /* clipboard write may fail in some contexts */ }
+}
+
+function flashCopied(el: HTMLElement) {
+  const original = el.textContent ?? '';
+  el.dataset.flashOriginal = original;
+  el.textContent = 'copied!';
+  el.classList.add('flash');
+  setTimeout(() => {
+    if (el.dataset.flashOriginal !== undefined) {
+      el.textContent = el.dataset.flashOriginal;
+      delete el.dataset.flashOriginal;
+    }
+    el.classList.remove('flash');
+  }, 900);
+}
+
+// Click on any .ioc-value copies it to clipboard. Delegated so it works
+// for IOC list, history, and recent-results rows alike.
+document.addEventListener('click', (e) => {
+  const target = (e.target as HTMLElement | null)?.closest<HTMLElement>('.ioc-value');
+  if (!target) return;
+  const value = target.textContent?.trim();
+  if (!value) return;
+  e.stopPropagation();
+  copyToClipboard(value, target);
+});
 
 init();

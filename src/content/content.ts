@@ -1,6 +1,6 @@
 import { refang } from '../lib/refang';
 import { detectIocs } from '../lib/regex';
-import { SETTINGS_KEY, getSettings } from '../lib/settings';
+import { SETTINGS_KEY, getSettings, isHostDisabled } from '../lib/settings';
 import type { DetectedIoc, Msg, ScanResult } from '../lib/types';
 
 const HL_CLASS = 'mlab-ioc-hl';
@@ -9,17 +9,42 @@ const SKIP_TAGS = new Set(['SCRIPT','STYLE','NOSCRIPT','IFRAME','OBJECT','EMBED'
 let lastIocs: DetectedIoc[] = [];
 let scanScheduled = false;
 let highlightEnabled = false;
+let siteDisabled = false;
+let cryptoDetection = false;
 let suppressMutations = false;
 
-getSettings().then((s) => { highlightEnabled = s.highlightEnabled; scheduleScan(); });
+getSettings().then((s) => {
+  highlightEnabled = s.highlightEnabled;
+  cryptoDetection = s.cryptoDetectionEnabled;
+  siteDisabled = isHostDisabled(location.hostname, s.disabledHosts);
+  if (!siteDisabled) scheduleScan();
+});
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes[SETTINGS_KEY]) return;
-  const next = changes[SETTINGS_KEY].newValue as { highlightEnabled?: boolean } | undefined;
-  const prev = highlightEnabled;
+  const next = changes[SETTINGS_KEY].newValue as {
+    highlightEnabled?: boolean;
+    disabledHosts?: string[];
+    cryptoDetectionEnabled?: boolean;
+  } | undefined;
+  const prevHl = highlightEnabled;
+  const prevDisabled = siteDisabled;
+  const prevCrypto = cryptoDetection;
   highlightEnabled = !!next?.highlightEnabled;
-  if (prev && !highlightEnabled) removeHighlights();
-  else if (!prev && highlightEnabled) scheduleScan();
+  cryptoDetection = !!next?.cryptoDetectionEnabled;
+  siteDisabled = isHostDisabled(location.hostname, next?.disabledHosts ?? []);
+
+  if (!prevDisabled && siteDisabled) {
+    removeHighlights();
+    lastIocs = [];
+    chrome.runtime.sendMessage<Msg>({ kind: 'detected', iocs: [], href: location.href }).catch(() => {});
+    return;
+  }
+  if (prevDisabled && !siteDisabled) { scheduleScan(); return; }
+  if (siteDisabled) return;
+  if (prevCrypto !== cryptoDetection) { scheduleScan(); return; }
+  if (prevHl && !highlightEnabled) removeHighlights();
+  else if (!prevHl && highlightEnabled) scheduleScan();
 });
 
 function removeHighlights() {
@@ -35,10 +60,11 @@ function removeHighlights() {
 }
 
 function scheduleScan() {
-  if (scanScheduled) return;
+  if (scanScheduled || siteDisabled) return;
   scanScheduled = true;
   setTimeout(() => {
     scanScheduled = false;
+    if (siteDisabled) return;
     runScan();
   }, 600);
 }
@@ -67,7 +93,7 @@ function runScan() {
   const textNodes = gatherTextNodes();
   const fullText = textNodes.map((n) => n.nodeValue ?? '').join('\n');
   const refanged = refang(fullText);
-  const iocs = detectIocs(refanged, { currentHost: location.hostname });
+  const iocs = detectIocs(refanged, { currentHost: location.hostname, detectCrypto: cryptoDetection });
   lastIocs = iocs;
 
   // notify background → badge
@@ -138,21 +164,196 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Click-to-scan on a highlighted IOC
+// Click on a highlighted IOC: open a small info popover instead of scanning directly.
 document.addEventListener('click', (e) => {
   const target = e.target as HTMLElement | null;
   if (!target) return;
+  // Clicking outside the popover closes it
+  if (popover && !popover.contains(target)) {
+    const mark = target.closest<HTMLElement>('.' + HL_CLASS);
+    if (!mark) { closePopover(); return; }
+  }
   const mark = target.closest<HTMLElement>('.' + HL_CLASS);
   if (!mark) return;
-  if (mark.dataset.reserved === '1') return;
   const type = mark.dataset.iocType as DetectedIoc['type'] | undefined;
   const value = mark.dataset.iocValue;
   if (!type || !value) return;
   e.preventDefault();
   e.stopPropagation();
-  chrome.runtime.sendMessage<Msg>({ kind: 'scan', ioc: { type, value } });
-  mark.classList.add('mlab-ioc-scanning');
+  openPopover(mark, type, value, mark.dataset.reserved === '1', mark.dataset.verdict);
 }, true);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closePopover();
+});
+window.addEventListener('scroll', () => closePopover(), { passive: true });
+window.addEventListener('resize', () => closePopover());
+
+let popover: HTMLElement | null = null;
+
+function closePopover() {
+  if (popover) { popover.remove(); popover = null; }
+}
+
+function openPopover(anchor: HTMLElement, type: DetectedIoc['type'], value: string, reserved: boolean, verdict?: string) {
+  closePopover();
+  const reportUrl =
+    type === 'domain' ? `https://mlab.sh/domain/${encodeURIComponent(value)}` :
+    `https://mlab.sh/ip/${encodeURIComponent(value)}`;
+
+  const host = document.createElement('div');
+  host.className = 'mlab-popover-host';
+  // Shadow DOM keeps the popover styles isolated from the host page.
+  const shadow = host.attachShadow({ mode: 'closed' });
+  shadow.innerHTML = `
+    <style>${POPOVER_CSS}</style>
+    <div class="card" role="dialog">
+      <div class="head">
+        <span class="type">${escapeHtml(type)}</span>
+        ${reserved ? '<span class="badge">reserved</span>' : ''}
+        ${verdict ? `<span class="verdict" data-v="${escapeHtml(verdict)}">${escapeHtml(verdict)}</span>` : ''}
+        <button class="close" aria-label="Close">×</button>
+      </div>
+      <div class="value" title="${escapeHtml(value)}">${escapeHtml(value)}</div>
+      <div class="actions">
+        ${reserved
+          ? '<span class="muted small">Reserved address — no lookup available.</span>'
+          : '<button class="primary scan-btn">Scan with mlab.sh</button>'}
+        <button class="copy-btn">Copy</button>
+        <a class="report" href="${reportUrl}" target="_blank" rel="noopener">Open report ↗</a>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(host);
+  positionPopover(host, anchor);
+
+  const close = () => closePopover();
+  shadow.querySelector<HTMLButtonElement>('.close')?.addEventListener('click', close);
+  shadow.querySelector<HTMLButtonElement>('.scan-btn')?.addEventListener('click', () => {
+    chrome.runtime.sendMessage<Msg>({ kind: 'scan', ioc: { type, value } });
+    anchor.classList.add('mlab-ioc-scanning');
+    const status = document.createElement('div');
+    status.className = 'status';
+    status.textContent = 'Scan queued — open the extension popup for results.';
+    shadow.querySelector('.actions')?.replaceWith(status);
+  });
+  shadow.querySelector<HTMLButtonElement>('.copy-btn')?.addEventListener('click', async (e) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      const btn = e.currentTarget as HTMLButtonElement;
+      const orig = btn.textContent;
+      btn.textContent = 'Copied!';
+      setTimeout(() => { btn.textContent = orig; }, 900);
+    } catch { /* no clipboard access */ }
+  });
+
+  popover = host;
+}
+
+function positionPopover(host: HTMLElement, anchor: HTMLElement) {
+  const rect = anchor.getBoundingClientRect();
+  // Anchor below the mark, clamped to viewport. Use position:fixed so scroll/resize handlers close it.
+  host.style.position = 'fixed';
+  host.style.zIndex = '2147483647';
+  host.style.top = `${Math.min(window.innerHeight - 200, rect.bottom + 6)}px`;
+  host.style.left = `${Math.max(8, Math.min(window.innerWidth - 280, rect.left))}px`;
+}
+
+const POPOVER_CSS = `
+  :host { all: initial; }
+  .card {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    color: #e2e8f0;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    width: 260px;
+    padding: 10px 12px;
+  }
+  .head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .type {
+    font-size: 10px;
+    text-transform: uppercase;
+    background: #334155;
+    color: #94a3b8;
+    padding: 2px 6px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+  .badge {
+    font-size: 10px;
+    background: rgba(148, 163, 184, 0.18);
+    color: #94a3b8;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .verdict {
+    font-size: 10px;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: #334155;
+    color: #94a3b8;
+  }
+  .verdict[data-v="clean"] { background: rgba(34,197,94,0.18); color: #22c55e; }
+  .verdict[data-v="suspicious"] { background: rgba(234,88,12,0.22); color: #fb923c; }
+  .verdict[data-v="malicious"] { background: rgba(220,38,38,0.22); color: #ef4444; }
+  .close {
+    margin-left: auto;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 18px;
+    line-height: 1;
+    padding: 0 4px;
+    cursor: pointer;
+    border-radius: 3px;
+  }
+  .close:hover { background: #334155; color: #e2e8f0; }
+  .value {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 13px;
+    word-break: break-all;
+    padding: 6px 8px;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    color: #e2e8f0;
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  button, .report {
+    font: inherit;
+    border-radius: 5px;
+    border: 1px solid #334155;
+    background: #334155;
+    color: #e2e8f0;
+    padding: 6px 10px;
+    cursor: pointer;
+    text-decoration: none;
+    line-height: 1;
+  }
+  button:hover, .report:hover { background: #475569; }
+  .primary { background: #6366f1; border-color: #6366f1; color: white; }
+  .primary:hover { background: #818cf8; border-color: #818cf8; }
+  .report { font-size: 12px; color: #94a3b8; background: transparent; border: none; padding: 6px 4px; }
+  .report:hover { color: #e2e8f0; background: transparent; }
+  .muted { color: #94a3b8; }
+  .small { font-size: 12px; }
+  .status {
+    font-size: 12px;
+    color: #94a3b8;
+    padding: 6px 8px;
+    background: rgba(99,102,241,0.12);
+    border-radius: 4px;
+  }
+`;
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+}
 
 // React to scan results: tag the highlight with verdict
 chrome.runtime.onMessage.addListener((msg: Msg) => {

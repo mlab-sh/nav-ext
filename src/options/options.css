@@ -163,6 +163,27 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   font-weight: 600;
 }
 
+.disabled-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.disabled-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--bg-3);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+.disabled-row button {
+  font-family: inherit;
+  font-size: 12px;
+}
+
 .toggle {
   display: flex;
   align-items: flex-start;

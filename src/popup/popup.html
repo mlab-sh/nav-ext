@@ -25,6 +25,11 @@
       <button id="scanCurrent" class="primary block">Scan this domain</button>
     </div>
 
+    <div id="siteToggleRow" class="site-toggle">
+      <span class="muted small" id="siteHost"></span>
+      <button id="toggleSite" class="link small">Disable on this site</button>
+    </div>
+
     <div class="row">
       <input id="manualInput" type="text" placeholder="domain, IP, or defanged (1.1.1[.]1)…" />
       <button id="scanManual">Scan</button>
@@ -53,6 +58,9 @@
     </div>
 
     <div id="tab-history" class="tab-panel">
+      <div class="row">
+        <input id="historyFilter" type="text" placeholder="Filter history…" />
+      </div>
       <div id="historyList" class="ioc-list">
         <p class="muted empty">No scans yet.</p>
       </div>

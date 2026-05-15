@@ -1,24 +1,26 @@
 {
   "name": "mlab-nav-ext",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "mlab.sh INTEL browser extension — domain & IP IOC scanning",
+  "description": "mlab.sh INTEL browser extension — domain, IP & crypto wallet IOC scanning",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
     "build:chrome": "node build.mjs chrome",
     "build:firefox": "node build.mjs firefox",
     "watch": "node build.mjs --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pack": "node pack.mjs",
+    "release": "npm run test && npm run typecheck && npm run build && npm run pack"
   },
   "devDependencies": {
     "@types/chrome": "^0.0.260",
     "@types/firefox-webext-browser": "^120.0.0",
     "esbuild": "^0.20.0",
     "sharp": "^0.34.5",
-    "typescript": "^5.4.0"
-  },
-  "dependencies": {
-    "webextension-polyfill": "^0.10.0"
+    "typescript": "^5.4.0",
+    "vitest": "^4.1.6"
   }
 }
