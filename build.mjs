@@ -88,8 +88,11 @@ async function buildBrowser(browser) {
   if (browser === 'firefox') {
     manifest.background = { scripts: ['background/service-worker.js'] };
     manifest.browser_specific_settings = {
-      gecko: { id: 'mlab-intel@mlab.sh', strict_min_version: '115.0' },
+      gecko: { id: 'mlab-intel@mlab.sh', strict_min_version: '128.0' },
     };
+    // Required by Firefox 128+ MV3 validation. We don't collect any user data;
+    // requests to mlab.sh API are made only on explicit user action.
+    manifest.browser_specific_settings.gecko.data_collection_permissions = { required: ['none'] };
   } else {
     manifest.background = { service_worker: 'background/service-worker.js' };
   }

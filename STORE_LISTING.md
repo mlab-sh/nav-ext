@@ -84,7 +84,7 @@ threat intelligence, ioc, security, malware, phishing, domain reputation, ip loo
 ---
 
 ## Support links
-- Homepage / source: https://github.com/Sn0wAlice/nav-ext  *(adjust to actual repo URL)*
+- Homepage / source: https://github.com/mlab-sh/nav-ext
 - Issue tracker: same
 - Privacy policy: link to PRIVACY.md raw or to a hosted copy on mlab.sh
 - mlab.sh: https://mlab.sh
