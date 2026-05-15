@@ -1,0 +1,24 @@
+{
+  "name": "mlab-nav-ext",
+  "version": "0.1.0",
+  "private": true,
+  "description": "mlab.sh INTEL browser extension — domain & IP IOC scanning",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "build:chrome": "node build.mjs chrome",
+    "build:firefox": "node build.mjs firefox",
+    "watch": "node build.mjs --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.260",
+    "@types/firefox-webext-browser": "^120.0.0",
+    "esbuild": "^0.20.0",
+    "sharp": "^0.34.5",
+    "typescript": "^5.4.0"
+  },
+  "dependencies": {
+    "webextension-polyfill": "^0.10.0"
+  }
+}

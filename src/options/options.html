@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>mlab.sh INTEL — Settings</title>
+  <link rel="stylesheet" href="options.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <div class="brand">
+        <img class="logo" src="../icons/logo.png" alt="mlab.sh" />
+        <h1>mlab.sh <span class="muted">INTEL</span> · Settings</h1>
+      </div>
+    </header>
+
+    <section class="card">
+      <h2>API key <span id="status" class="status">Anonymous</span></h2>
+      <p class="muted">
+        The extension works without an account using mlab.sh's <strong>Anonymous tier</strong>
+        (2 domain / 5 IP lookups per day). Add an API key to lift the quota.
+      </p>
+
+      <div class="row">
+        <input id="apiKey" type="password" placeholder="mlab_xxxxxxxxxxxxxxxx" autocomplete="off" />
+        <button id="toggleVisibility" class="ghost" type="button" title="Show/hide">👁</button>
+      </div>
+
+      <div class="actions">
+        <button id="save" class="primary">Save key</button>
+        <button id="clear" class="danger">Remove key</button>
+      </div>
+
+      <p id="message" class="message hidden"></p>
+
+      <p class="hint">
+        Don't have a key?
+        <a href="https://mlab.sh/helpcenter/" target="_blank" rel="noopener">Get one from mlab.sh →</a>
+      </p>
+    </section>
+
+    <section class="card">
+      <h2>Quota</h2>
+      <div id="quota" class="quota">
+        <p class="muted">Loading…</p>
+      </div>
+      <button id="refreshQuota" class="ghost">Refresh</button>
+    </section>
+
+    <section class="card">
+      <h2>Display</h2>
+      <label class="toggle">
+        <input type="checkbox" id="highlightEnabled" />
+        <span class="toggle-track"><span class="toggle-thumb"></span></span>
+        <span class="toggle-label">
+          <strong>Inline highlight</strong>
+          <small class="muted">Highlight detected IOCs directly inside every page. Off by default — the popup still shows what was found.</small>
+        </span>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2>Cache</h2>
+      <p class="muted">Scan results are cached locally for 24h to avoid burning quota on the same IOC.</p>
+      <button id="clearCache" class="danger">Clear cache</button>
+      <p id="cacheMessage" class="message hidden"></p>
+    </section>
+
+    <footer class="footer">
+      <a href="https://mlab.sh" target="_blank" rel="noopener" class="muted">mlab.sh ↗</a>
+      <span class="muted">v<span id="version"></span></span>
+    </footer>
+  </main>
+
+  <script src="options.js"></script>
+</body>
+</html>

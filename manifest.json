@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "mlab.sh INTEL",
+  "version": "0.1.0",
+  "description": "Detect domain and IP IOCs on any page and pivot to mlab.sh investigation in one click.",
+  "permissions": ["storage", "contextMenus", "activeTab", "tabs"],
+  "host_permissions": ["https://mlab.sh/*"],
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "mlab.sh INTEL",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "css": ["content/highlight.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

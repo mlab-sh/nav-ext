@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>mlab.sh INTEL</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="brand">
+      <img class="logo" src="../icons/logo.png" alt="mlab.sh" />
+      <span class="title">mlab.sh <span class="muted">INTEL</span></span>
+    </div>
+    <div class="header-right">
+      <span id="authBadge" class="auth-badge" title="API key status">Anonymous</span>
+      <button id="openSettings" class="icon-btn" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <section class="main">
+    <div id="limits" class="limits-row"></div>
+
+    <div class="row">
+      <button id="scanCurrent" class="primary block">Scan this domain</button>
+    </div>
+
+    <div class="row">
+      <input id="manualInput" type="text" placeholder="domain, IP, or defanged (1.1.1[.]1)…" />
+      <button id="scanManual">Scan</button>
+    </div>
+    <p id="manualHint" class="hint hidden"></p>
+
+    <div class="tabs" role="tablist">
+      <button class="tab active" data-tab="detected" role="tab">
+        Detected <span id="iocCount" class="tab-count"></span>
+      </button>
+      <button class="tab" data-tab="history" role="tab">
+        History
+      </button>
+    </div>
+
+    <div id="tab-detected" class="tab-panel active">
+      <div id="iocList" class="ioc-list">
+        <p class="muted empty">No IOCs detected.</p>
+      </div>
+      <div id="results-section">
+        <div class="section-title">Recent (this session)</div>
+        <div id="results" class="results">
+          <p class="muted empty">Scan something to see results.</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-history" class="tab-panel">
+      <div id="historyList" class="ioc-list">
+        <p class="muted empty">No scans yet.</p>
+      </div>
+      <button id="clearHistory" class="link small" style="margin-top:8px">Clear history</button>
+    </div>
+
+    <footer class="footer">
+      <a href="https://mlab.sh" target="_blank" rel="noopener" class="muted small">mlab.sh ↗</a>
+      <button id="openSettingsFooter" class="link small">Settings</button>
+    </footer>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>
