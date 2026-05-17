@@ -1,0 +1,70 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+mlab.sh INTEL
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Spot indicators of compromise on any web page and pivot to a full mlab.sh report in one click — without leaving the page.
+
+
+▸ WHAT IT DETECTS
+
+  •  Domains and FQDNs
+  •  IPv4 and IPv6 addresses
+  •  Crypto wallet addresses (opt-in)
+       — Bitcoin (legacy, p2sh, bech32)
+       — Ethereum and other EVM chains
+       — Tron
+       — Solana
+
+  Defanged formats commonly used in reports are normalized automatically:
+       evil[.]com     →  evil.com
+       hxxp://...     →  http://...
+       1.1.1[.]1      →  1.1.1.1
+       user[at]x.com  →  user@x.com
+
+
+▸ HOW YOU INVESTIGATE
+
+  •  Click any highlighted item on the page → small popover with Scan / Copy / Open report
+  •  Right-click any selected text → "Scan with mlab.sh"
+  •  Toolbar popup → "Scan this domain" for the current tab
+  •  Manual input or bulk paste (newline, comma, space separated)
+
+
+▸ HISTORY AND CACHE
+
+  •  Last 10 scans kept locally, filterable, with one-click re-scan
+  •  24-hour result cache to avoid burning quota on the same item
+  •  Server-side cache check before launching a new domain scan
+
+
+▸ PRIVACY
+
+  •  No browsing data is sent anywhere. No analytics. No third parties.
+  •  The extension contacts mlab.sh only when you explicitly trigger a scan or refresh your quota.
+  •  Your API key, cache, history and settings stay on your device.
+  •  Works fully anonymously by default — no account required.
+  •  Inline highlighting is off by default. Crypto detection is off by default.
+  •  Per-site disable available for any host you want to keep passive.
+
+
+▸ ANONYMOUS BY DEFAULT
+
+  Uses the free mlab.sh Anonymous tier out of the box (2 domain / 5 IP / 3 crypto lookups per day). Add your own API key in Settings for higher quotas.
+
+
+▸ ROBUST UNDER REAL CONDITIONS
+
+  •  60-second back-off when the API is rate-limited
+  •  In-flight scan deduplication
+  •  Abort signals so closing the popup cancels in-progress polling
+  •  Full IANA TLD list embedded for accurate domain detection
+  •  Reserved IP ranges (RFC1918, loopback, CGNAT, link-local, multicast) filtered automatically
+
+
+▸ OPEN SOURCE
+
+  The bundle is built from TypeScript with no obfuscation. You can read exactly what the extension does before installing.
+
+  Privacy policy: https://mlab.sh
+  Source:         https://github.com/mlab-sh/nav-ext
+  mlab.sh:        https://mlab.sh
